@@ -1,0 +1,61 @@
+name: build
+
+on:
+  push:
+    branches:
+      - master
+      - renovate/**
+    paths-ignore:
+      - "**.md"
+      - ".gitignore"
+      - "samples/**"
+      - "grafana/**"
+      - "systemd/**"
+      - "renovate.json"
+  pull_request:
+    branches:
+      - master
+    paths-ignore:
+      - "**.md"
+      - ".gitignore"
+      - "samples/**"
+      - "grafana/**"
+      - "systemd/**"
+      - "renovate.json"
+
+concurrency:
+  group: build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-14 # Updated to run on macOS 14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.1.1
+      - name: Setup Go
+        uses: actions/setup-go@v5.0.0
+        with:
+          go-version-file: go.mod
+      - name: Ensure go.mod is already tidied
+        run: go mod tidy && git diff --no-patch --exit-code
+      - name: Run linters
+        uses: golangci/golangci-lint-action@v4.0.0
+        with:
+          version: v1.55.2
+          args: --timeout=3m0s
+      - name: Install richgo
+        run: go install github.com/kyoh86/richgo@v0.3.12
+      - name: Run tests
+        run: richgo test -race -coverpkg=./... -coverprofile=coverage.txt -covermode=atomic -timeout 20m -v ./...
+      - name: Send coverage
+        uses: codecov/codecov-action@v4.0.1
+        with:
+          files: coverage.txt
+      - name: Build with Goreleaser
+        uses: goreleaser/goreleaser-action@v5.0.0
+        with:
+          version: v1.24.0
+          args: release --snapshot --skip-publish --clean
+        env:
+          PRIVATE_ACCESS_TOKEN: placeholder
